@@ -1,6 +1,6 @@
 ---
 name: class-material-to-website
-description: Turn a folder of course materials (syllabus, slides, HW/MP, textbooks, notes) into a static study website AND keep that site evolving across the semester. Core deliverable is a clean node-based study roadmap on the homepage with one cell per topic, an SVG connector spine with arrowheads (typed edges — solid for prerequisites, dotted for inferred), click-anchored popups carrying tutorial blurbs / code-template links / paraphrased homework problems, a three-mode language slider (EN / EN+中 / 中), an Atlas-vs-Mermaid view switcher, optional progress persistence via a tiny Python server, and a GitHub Actions deploy workflow. Topics carry an evidence-aware source_status (planned / inferred / confirmed / expanded / reviewed) so the site is honest about what's grounded vs. guessed; supports a progressive workflow (syllabus-only bootstrap → weekly material upgrades → final review consolidation) without destructive regeneration. Use when the user asks to "make a study site / review website / roadmap" out of a course folder, shows a directory of lecture / HW / textbook PDFs and asks for a tree visualization, or returns later with new slides / HW / notes to fold into an existing site.
+description: Turn a folder of course materials (syllabus, slides, HW/MP, textbooks, notes) into a static study website AND keep that site evolving across the semester. Core deliverable is a clean node-based study roadmap on the homepage with one cell per topic, an SVG connector spine with arrowheads (typed edges — solid for prerequisites, dotted for inferred), click-anchored popups carrying tutorial blurbs / code-template links / paraphrased homework problems, a two-mode language toggle (EN / 中, where 中 is Chinese-dominant with English keywords inline), an Atlas-vs-Mermaid view switcher, optional progress persistence via a tiny Python server, and a GitHub Actions deploy workflow. Topics carry an evidence-aware source_status (planned / inferred / confirmed / expanded / reviewed) so the site is honest about what's grounded vs. guessed; supports a progressive workflow (syllabus-only bootstrap → weekly material upgrades → final review consolidation) without destructive regeneration. Use when the user asks to "make a study site / review website / roadmap" out of a course folder, shows a directory of lecture / HW / textbook PDFs and asks for a tree visualization, or returns later with new slides / HW / notes to fold into an existing site.
 ---
 
 # class-material-to-website
@@ -30,7 +30,7 @@ If the user only wants a single static page (no tree, no per-topic pages), this 
 
 1. **Course root folder** — directory containing slides, HW, textbooks, notes. The site folder will be created inside it.
 2. **Course name + code** (e.g. "Operating Systems · CS 423") for the page title and topbar.
-3. **Languages** — single language, or bilingual with the EN / EN+中 / 中 slider. Default to single-language English unless the user is writing in Chinese or has bilingual notes.
+3. **Languages** — single language, or bilingual with the two-mode `EN / 中` toggle (the `中` body is Chinese-dominant with English keywords kept inline; there is no third stacked-bilingual mode). Default to single-language English unless the user is writing in Chinese or has bilingual notes.
 4. **Output folder name** — default `<Course> Review/` next to existing `slides/`, `HW/`, etc.
 5. **Git remote** — if the user wants the site pushed. If yes, also ask whether they want auto-deploy via GitHub Pages (almost always yes).
 6. **Topic list source**:
@@ -139,8 +139,10 @@ Read the syllabus / consolidated notes with `pdftotext`, `pypdf`, or `textutil -
 
 ```
 <Course> Review/
-├── index.html                  Atlas + Mermaid + algorithm index
-├── cheatsheet.html             one-page cram sheet
+├── index.html                  Atlas (React Flow) + Mermaid view switch — homepage only
+├── algorithms.html             standalone algorithm/topic index with multi-axis filter chips
+├── problems.html               standalone HW-problem aggregator (optional, but recommended)
+├── cheatsheet.html             bilingual equation / formula sheet
 ├── resources.html              lecture / HW / textbook map
 ├── README.md                   English; deploy + run instructions
 ├── AGENT.md                    project notes for future Claude sessions
@@ -152,16 +154,25 @@ Read the syllabus / consolidated notes with `pdftotext`, `pypdf`, or `textutil -
 │   ├── <slug>.html
 │   └── …
 └── assets/
-    ├── style.css               visuals + i18n visibility + popup + slider thumb
+    ├── style.css               visuals + i18n visibility + popup + slider + .home-shell + .rf-* + .algo-*
     ├── progress-sync.js        ⚠ MUST load first; patches localStorage to /api/progress
-    ├── i18n.js                 EN / EN+中 / 中 + slider thumb alignment (only if bilingual)
-    ├── topics-data.js          GROUPS + TOPICS metadata for cards
+    ├── i18n.js                 EN / 中 toggle + thumb alignment (only if bilingual)
+    ├── topics-data.js          GROUPS + TOPICS metadata for cards (with lectures / hw arrays)
     ├── popup-data.js           tutorial / Python templates / HW problem entries
-    ├── popup.js                click-anchored popup component
-    └── main.js                 progress + search + connector lines + topic-page code injector
+    ├── popup.js                click-anchored popup; exposes window.openTopicPopup(slug, anchor)
+    ├── main.js                 progress + search (.rf-topic + .algo-row) + topic-page code injector
+    ├── atlas-rf.js             ES module — React Flow Atlas (only on index.html)
+    ├── algorithm-tags.js       TOPIC_TAGS + TAG_DIMENSIONS for the algorithm-index filter
+    ├── algorithm-index.js      algorithms.html renderer + chip filter logic
+    ├── equation-sheet.js       cheatsheet.html data source — formula blocks per topic
+    └── problems-page.js        problems.html renderer (optional)
 ```
 
 Plus symlinks `slides/`, `HW/`, `book/` pointing at the parent directory, all listed in `.gitignore`.
+
+### Why standalone pages instead of one giant homepage
+
+The Atlas roadmap wants the full viewport. The algorithm index wants a sticky filter bar. The HW problem aggregator wants a flat checklist. Past attempts to stack all three on `index.html` produced a long-scroll page that buried the filter UI and shrank the Atlas. **Each lives on its own page** with a top-bar nav link; the homepage stays focused on the React Flow knowledge graph + Mermaid switch + progress side-card. Mirror this split — don't try to shove the filter chips into the homepage.
 
 ---
 
@@ -177,7 +188,7 @@ A clean node-based study roadmap: a root node at the top, two columns of grouped
   - a label in the top-left (with a small inset background color)
   - a 1-3 column grid of topic cards inside
 - Each card:
-  - centered topic name (English on top; CN underneath if bilingual mixed mode)
+  - centered topic name (English in EN mode; Chinese in 中 mode — CSS-toggled `.en-only` / `.cn-only` siblings)
   - a small colored **difficulty** dot in the top-right corner (green = easy, yellow = medium, red = hard)
   - a thin progress bar at the bottom (fills proportionally as the topic's HW problems get checked)
   - **status styling** keyed off `source_status` / `page_status`:
@@ -339,7 +350,8 @@ The trailing-slash mappings (`react/`, `react-dom/`) are load-bearing: `@xyflow/
   </div>
 </section>
 
-<div class="page">…index table…</div>
+<!-- NO inline algorithm-index table here. The standalone algorithms.html
+     page handles that — homepage stays focused on the Atlas. -->
 ```
 
 CSS contract (essentials):
@@ -473,16 +485,33 @@ Close on `Escape`, click outside, or the `✕` button.
 
 If the user wants two languages:
 
-### The slider switch
+### Two language modes
 
-Three-segment **slider** in the topbar (segmented control with a sliding thumb), order **fixed**: `EN | EN+中 | 中` left to right.
+Exactly two modes — there is no stacked-bilingual third mode. Earlier versions of this skill shipped an `EN+中` mixed mode; it was removed because the duplicated walls of text just clutter the page and almost no one reads them.
+
+| Mode | Behavior |
+| ---- | -------- |
+| `en` | **Pure English.** `.cn-only` hidden via CSS. Zero CJK characters appear (enforced by EN-leak audit). Default. |
+| `cn` | **Chinese-dominant, English keywords inline.** Body prose is in Chinese; technical terms with no clean Chinese equivalent (`Hessian`, `PSD`, `Lagrangian`, `softmax`, `Transformer`, `prior`, `posterior`, …) stay in English, often paired as `中文 / English` on first mention. `.en-only` hidden. |
+
+What "Chinese-dominant + English keywords" means concretely:
+
+- ✅ `条件独立 / Conditional independence` on first mention.
+- ✅ `半正定 (PSD)`, `特征值 / eigenvalue`, `Lagrangian 给出对偶下界`.
+- ✅ Code identifiers, math symbols, and slogans stay as-is: `posterior $\propto$ likelihood × prior`.
+- ❌ Whole English sentences embedded in the CN body.
+- ❌ Pasting the EN paragraph alongside as a "翻译".
+- ❌ Translating well-established CN terms back to English everywhere (write `梯度下降`, not `梯度下降 (gradient descent)` repeatedly).
+
+### The toggle switch
+
+Two-segment switch in the topbar (segmented control with a sliding thumb), order **fixed**: `EN | 中` left to right.
 
 ```html
 <div class="lang-switch" data-active="en">
   <span class="lang-thumb" aria-hidden="true"></span>
-  <button data-lang="en"    type="button">EN</button>
-  <button data-lang="mixed" type="button">EN+中</button>
-  <button data-lang="cn"    type="button">中</button>
+  <button data-lang="en" type="button">EN</button>
+  <button data-lang="cn" type="button">中</button>
 </div>
 ```
 
@@ -500,22 +529,16 @@ function alignSliderThumb(sw) {
 }
 ```
 
-### Three-mode CSS visibility
+The legacy `mixed` value should be normalized to `en` if encountered in `localStorage`.
+
+### Two-mode CSS visibility
 
 ```css
 html[data-lang="en"] .cn-only { display: none !important; }
 html[data-lang="cn"] .en-only { display: none !important; }
-html[data-lang="mixed"] .cn-only,
-html[data-lang="mixed"] .en-only {
-  border-left: 2px solid var(--border);
-  padding-left: 10px;
-  margin: 6px 0;
-}
-.lbl-en, .lbl-cn { display: block; }
-.lbl-cn { font-size: 0.85em; color: var(--text-soft); margin-top: 4px; font-weight: 500; }
 ```
 
-Static markup uses `<html lang="en" data-lang="en">` so EN visibility kicks in on first paint (no Chinese flash before JS runs).
+Static markup uses `<html lang="en" data-lang="en">` so EN visibility kicks in on first paint (no Chinese flash before JS runs). Don't reintroduce `.mixed-only` / `.mixed-hide` / `lbl-en+lbl-cn` stacking — those are obsolete.
 
 ### Bilingual content patterns
 
@@ -542,7 +565,7 @@ Topics-data shape (extended for evidence-awareness):
 ```js
 window.GROUPS = [{
   id, name_en, name_cn, sub_en, sub_cn,
-  emoji,                  // optional, used in mixed-mode dedup
+  emoji,                  // optional, leading emoji for the group label
   layer,                  // optional, 0 = foundations row, 1 = main columns, 2 = advanced
 }, …];
 
@@ -597,14 +620,6 @@ Edge `type` values: `group` (spine), `prerequisite`, `concept`, `review-flow`, `
 
 **Schema migration is additive.** Old sites with bare `{slug, name, group, diff}` topics still render — missing status fields default to `confirmed` / `expanded` so existing roadmaps don't suddenly turn dashed. Add the new fields when you actually have evidence to carry.
 
-### Mixed-mode rendering rules
-
-When `lang === "mixed"`, applyLang(el) renders a stacked label:
-
-- For `data-i18n` elements: replace `el.textContent` with `<span class="lbl-en">…</span><span class="lbl-cn">…</span>`.
-- For `data-cn` / `data-en` elements: same pattern in the inline scripts that render homepage cards / index table.
-- **Dedupe shared leading emoji.** When EN and CN both start with `📐`, only the EN line keeps it. Use `\p{Extended_Pictographic}` regex.
-
 ### Topic page parallel structure
 
 ```html
@@ -627,6 +642,114 @@ When `lang === "mixed"`, applyLang(el) renders a stacked label:
   </section>
 </div>
 ```
+
+---
+
+## Standalone algorithm index — `algorithms.html`
+
+A dedicated page that shows every topic in one filterable index. Reached from the topbar nav as 📚 Algorithms / 算法表. The Atlas homepage is for reading the *shape* of the curriculum; this page is for slicing the curriculum by ML-knowledge axes.
+
+### Page anatomy
+
+```
+algorithms.html
+├── topbar (with 📚 Algorithms marked .active)
+├── block-header (page title + crumbs)
+├── .algo-filter
+│   ├── .algo-filter-bar
+│   │   ├── "Showing N / total algorithms" summary
+│   │   └── 🔍 Filters · ✅ Select all · 🗑️ Clear all · ↺ Reset buttons
+│   └── .algo-filter-body  (hidden by default; opened by 🔍 Filters)
+│       └── one .algo-filter-section per dimension (chips inside)
+├── .algo-index-body  (groups → cards, mirrors topics-data.js GROUPS order)
+└── .algo-empty  (only shown if every chip is unchecked in some dim)
+```
+
+### Filter taxonomy — keep it ML-knowledge only
+
+Trim aggressively. The chips clutter fast, so include **only dimensions that are real properties of the algorithm**, not course-organizational metadata. ML Atlas reference taxonomy:
+
+| Dimension | Why it's in | Sample chips |
+| --- | --- | --- |
+| 🧭 Learning paradigm | how the algorithm learns | Supervised / Unsupervised / Self-supervised / Reinforcement / Theory |
+| 🎬 Task | what problem it solves | Classification / Regression / Clustering / Dim-reduction / Representation / Sequence / Generation / Decision / Theoretical bound |
+| 🧬 Model family | what kind of model it is | Classical ML / Linear / Non-parametric / Probabilistic / Kernel / Tree-based / Ensemble / Neural / Deep / RL |
+
+Things to **exclude** (the user has called them clutter):
+
+- **Block / Group** — already a section header in the body below. Adding it as a filter chip duplicates the structure.
+- **Difficulty** — already shown as the colored dot on each card; not a knowledge property.
+- **Lecture number / HW number** — too granular; doesn't survive course revisions.
+
+### Tag data file (`assets/algorithm-tags.js`)
+
+Two globals: `window.TOPIC_TAGS` (slug → 3-axis arrays) and `window.TAG_DIMENSIONS` (chip definitions in render order with EN+CN labels).
+
+```js
+window.TOPIC_TAGS = {
+  "knn":            { paradigm: ["supervised"],     task: ["classification"],            family: ["non-parametric", "classical"] },
+  "linear-regression": { paradigm: ["supervised"],  task: ["regression"],                family: ["linear", "classical"] },
+  // foundations get empty arrays — they aren't ML algorithms with paradigm/task
+  "probability":    { paradigm: [],                  task: [],                            family: ["probabilistic"] },
+  "linear-algebra": { paradigm: [],                  task: [],                            family: ["linear"] },
+  // theory pages: paradigm tagged "theory", but no model family
+  "pac":            { paradigm: ["theory"],          task: ["theoretical-bound"],         family: [] },
+  // …
+};
+
+window.TAG_DIMENSIONS = [
+  { id: "paradigm", label: { en: "🧭 Learning paradigm", cn: "🧭 学习范式" },
+    values: ["supervised", "unsupervised", "self-supervised", "reinforcement", "theory"],
+    valueLabels: { supervised: { en: "Supervised", cn: "监督" }, /* … */ } },
+  { id: "task",     label: { en: "🎬 Task", cn: "🎬 任务类型" },     values: [/* … */], valueLabels: { /* … */ } },
+  { id: "family",   label: { en: "🧬 Model family", cn: "🧬 模型族" }, values: [/* … */], valueLabels: { /* … */ } },
+];
+```
+
+Empty-array tagging is **load-bearing** — the visibility predicate must treat "topic has no values for this dim" as "not classified along this axis, so don't filter it out." Without this, foundations and theory pages disappear from the page once the user starts deselecting chips. Concretely:
+
+```js
+function isVisible(topic) {
+  for (const dim of DIMS) {
+    const vals = topicValues(topic, dim);
+    if (vals.length === 0) continue;   // ← the load-bearing line
+    if (!vals.some(v => state[dim.id].has(v))) return false;
+  }
+  return true;
+}
+```
+
+### Renderer behavior (`assets/algorithm-index.js`)
+
+- State: `{ paradigmId: Set(values), taskId: Set, familyId: Set }`. Default = every dim's full value set selected (so first paint shows everything).
+- Filter panel **closed by default**. The `🔍 Filters` button toggles `.algo-filter-body` hidden state and reveals the global Select all / Clear all / Reset buttons.
+- Per-dimension `all` / `none` mini-buttons sit at each section head (more useful than only-global controls when the user wants to flip just one axis).
+- Chip count `(N)` is `topics carrying this value`, computed once at boot — it doesn't react to other chip selections (which would feel laggy and confusing). Chips with count 0 are hidden entirely.
+- Re-render on language switch: rebuild chip labels + re-render groups, keep state.
+- Topbar search box filters the *visible* cards by `name_en + name_cn + sub_en + sub_cn` haystack on top of the chip filters; whole groups hide when their last row drops out.
+- Cards link directly to `topics/<slug>.html` — no popup on this page. The popup is the homepage's affordance; the index is for jumping into the page.
+
+### CSS hooks (the `.algo-*` namespace)
+
+Stay in this prefix for everything on `algorithms.html` so it doesn't collide with `.rf-*` (Atlas) or generic homepage selectors. Key classes: `.algo-filter`, `.algo-filter-bar`, `.algo-filter-body`, `.algo-filter-section`, `.algo-chips`, `.algo-chip` (with `.on` for selected), `.algo-chip-count`, `.algo-mini-btn`, `.algo-index-body`, `.algo-group` / `.algo-group-head` / `.algo-group-grid`, `.algo-row` / `.algo-dot` / `.algo-name` / `.algo-sub`, `.algo-empty`.
+
+---
+
+## Standalone HW-problem aggregator — `problems.html` (optional)
+
+Same pattern as the algorithm index but flatter. `assets/problems-page.js` walks every entry in `POPUP_DATA[slug].problems`, groups by HW number (and Block where useful), and renders a checklist. Each checkbox writes to the same `prob:slug:pid` localStorage key the popup uses — so progress is shared, and a check made here lights up the popup on the homepage and vice versa. Useful for "show me everything I haven't ticked off yet" study sessions, especially during finals review.
+
+---
+
+## Cheatsheet — `cheatsheet.html` + `assets/equation-sheet.js`
+
+Treat the cheatsheet as **rendered from data**, not hand-edited HTML. `equation-sheet.js` exports an array of formula blocks; one entry per topic, each carrying:
+
+- topic slug + EN/CN title
+- a list of formula blocks: each has an EN explanation, CN explanation, the LaTeX (rendered by MathJax), and an optional `worked_example` snippet
+- a color hint (purple for formula callouts is the default; use other colors only when the formula has a special role — e.g. a derivation step vs the final form)
+
+`cheatsheet.html` is a thin shell that calls the renderer. To add a formula, edit the data file. Don't sprinkle one-off `<div class="callout">…</div>` blocks into the HTML — that defeats the rendered-from-data invariant and the page becomes unmaintainable.
 
 ---
 
@@ -800,26 +923,28 @@ than inventing inline `style=` colors:
 ```
 
 Then ship a parallel `<section class="topic" id="<slug>-cn">` with the
-same 9 sections in Chinese. The CN body is a real translation /
-adaptation, not a literal word-for-word — keep the conversational voice
-in section 2 conversational in CN too. Mixed mode renders both bodies
-stacked with the existing left-border treatment from `style.css`.
+same 9 sections in Chinese. The CN body is a real adaptation, not a
+word-for-word translation — keep the conversational voice in section 2
+conversational in CN too. CN body is **Chinese-dominant with English
+keywords inline**: technical terms (`Hessian`, `PSD`, `Lagrangian`,
+`softmax`, `Transformer`, `posterior`, …) stay in English; established
+Chinese ML vocabulary (`梯度下降`, `条件概率`, `线性回归`) stays in Chinese.
+On first mention pair as `中文 / English` if both forms are useful.
 
-### Bilingual / mixed-mode rules (re-stated for the 9 sections)
+### Bilingual rules (re-stated for the 9 sections)
 
 - Every section appears in **both** `.en-only` and `.cn-only` bodies.
   Don't ship 9 in EN and 6 in CN.
 - Section headings are bilingual via parallel `<span class="en-only">` /
   `<span class="cn-only">` inside `<div class="head">`, OR each `.head`
   lives inside its own language wrapper.
-- In **mixed mode** the page shows both bodies stacked, each with its
-  thin left border (already handled by global `html[data-lang="mixed"]`
-  CSS rules). Don't try to interleave the languages section-by-section
-  — students prefer reading one full pass per language.
 - Equations stay language-neutral; explanatory prose around them is
-  duplicated.
+  written natively in each language.
 - Worked Examples: same problem in both languages, same numbers. Keep
   variable names ASCII so copy-paste works in either language.
+- The CN body should not read as a literal translation of the EN body.
+  It is its own teaching pass, in Chinese, with English jargon kept where
+  English jargon is more recognizable to ML students.
 
 ### Status discipline for the 9 sections
 
@@ -851,15 +976,12 @@ flipped to `expanded`. **Don't ship shallow.**
 The TOC builder must be language-aware:
 
 ```js
-// Skip headings inside the inactive language wrapper; dedupe in mixed mode.
+// Skip headings inside the inactive language wrapper.
 items.forEach(el => {
   if (lang === "en" && el.closest(".cn-only")) return;
   if (lang === "cn" && el.closest(".en-only")) return;
   const sect = el.closest("section.topic");
   if (!sect || !sect.id) return;
-  const baseId = sect.id.replace(/-(?:en|cn)$/, "");
-  if (lang === "mixed" && seen.has(baseId)) return;
-  seen.add(baseId);
   // …append link to TOC…
 });
 // Rebuild on lang switch via event delegation.
@@ -1160,7 +1282,7 @@ jobs:
 8. Bilingual UI strings via i18n.js
    - Dictionary keyed by data-i18n="…" attributes
    - Cover nav links, button labels, page headers, section titles, tooltips
-   - applyLang handles three modes; mixed mode stacks with emoji dedup
+   - applyLang handles two modes (`en` / `cn`); legacy `mixed` stored value normalizes to `en`
 
 9. README in the user's chosen language
    - Layout, how to run locally with serve.py, what the symlinks do,
@@ -1282,7 +1404,7 @@ Pick a stable prefix per-site (e.g. `ml_review_*`, `os_review_*`):
 | Key | Type | Purpose |
 | --- | --- | --- |
 | `<prefix>_progress_v1` | object | Mastered slugs + checked problems + read tutorials |
-| `<prefix>_lang_v1`     | `"en" \| "cn" \| "mixed"` | Active language mode |
+| `<prefix>_lang_v1`     | `"en" \| "cn"` | Active language mode (legacy `"mixed"` should normalize to `"en"`) |
 | `<prefix>_view_v1`     | `"atlas" \| "mermaid"` | Roadmap view selection |
 
 Bump the suffix (`_v2`) only if the schema changes incompatibly.
@@ -1297,7 +1419,7 @@ Reference implementations live next to this SKILL.md in `assets/`:
 ~/.claude/skills/class-material-to-website/assets/
 ├── style.css         polished bilingual CSS + popup + slider thumb + .home-shell + .rf-* nodes
 ├── progress-sync.js  ⚠ MUST load first; patches localStorage to /api/progress
-├── i18n.js           EN / EN+中 / 中 + slider thumb alignment
+├── i18n.js           EN / 中 toggle + thumb alignment
 ├── popup.js          click-anchored popup with viewport-aware positioning + window.openTopicPopup
 ├── main.js           progress + search (also targets .rf-topic) + topic-code injector
 └── atlas-rf.js       Profile B — React Flow Atlas ES module (mounts in #rfMount; uses GROUP_LAYOUT + onNodeClick)
@@ -1325,18 +1447,28 @@ For Profile A sites, drop `atlas-rf.js` and the importmap/CDN imports — Profil
 - **Slider thumb misaligned** — CSS percentage transforms drift. Use `getBoundingClientRect()` of the active button.
 - **Pasting a whole HW problem or solution wall-of-text.** Stop. The default is paraphrase + a clearer explanation; reserve quotes for specific load-bearing phrasing (precise definitions, exact prompts, key formulas) and mark them as quotes. Always link to the source PDF for the full text.
 - **Detail page that just mirrors the slide deck or textbook section.** Not enough. The value of a detail page is making the source easier to understand — expand terse steps, add intuition, walked-through examples, and "why does this work" notes. If your page reads identical to the slide, rewrite it. Use the [9-section template](#topic-detail-page--9-section-template) — every section is a colored callout, and a topic page that doesn't have all 9 sections in BOTH language bodies is not yet `expanded`.
-- **Shipping fewer sections in CN than in EN.** The CN reader gets the same teaching depth. If you write Plain-English / Worked Examples / Quick Checklist in EN, write them in CN too. Mixed mode shows both bodies stacked.
+- **Shipping fewer sections in CN than in EN.** The CN reader gets the same teaching depth. If you write Plain-English / Worked Examples / Quick Checklist in EN, write them in CN too.
+- **CN body that is just a literal translation of the EN body.** The CN body is its own teaching pass — Chinese-dominant prose with English keywords inline (`Hessian`, `PSD`, `Lagrangian`, `softmax`, `Transformer`), not a word-for-word render. If the CN reads identically to the EN with characters swapped, rewrite it in natural Chinese.
+- **Reintroducing `EN+中` mixed mode / `.mixed-only` / `.mixed-hide` / `lbl-en+lbl-cn` stacking.** The mode was removed; stacked bilingual content is no longer wanted. Two modes only.
 - **Marking a topic `confirmed` without evidence.** If the slides / HW / notes haven't actually mentioned it, it must stay `planned` or `inferred`. Faking confirmation poisons the source-status UI.
 - **Inventing course-specific formulas / examples / exam-focus on a `planned` page.** Skeleton pages must read as skeletons; the user can tell when you've made up specifics that aren't in any source they have.
 - **Overwriting a human-edited topic page on a weekly update.** Check mtime vs. topics-data.js (or the `<!-- human-edited -->` marker). When in doubt, write `<slug>.html.new` and surface the diff instead of clobbering.
 - **Edge endpoint refers to a topic / group that doesn't exist.** Connector silently no-ops. Validate that every `from` / `to` matches an existing `id` (topic slug, `g-<gid>`, or `n-root`) before render.
 - **First Pages deploy fails with `Configure Pages` error** — that means the user hasn't toggled Settings → Pages → Source: GitHub Actions yet. Tell them once.
+- **Stuffing the algorithm index back onto the homepage.** Past versions had it as a long block under the Atlas — the user has explicitly moved it to `algorithms.html`. Don't re-add it under the React Flow shell.
+- **Filter chips for course-org metadata (block / difficulty / lecture #).** Trim to ML-knowledge axes (paradigm / task / family). Course meta clutters the panel and doesn't help students slice the curriculum by what they actually want to study.
+- **Missing the empty-array carve-out in `isVisible`.** If you require every topic to have at least one tag in every dim, foundation pages (probability, linear algebra) and theory pages (PAC, VC) disappear once the user starts unchecking chips. The rule is: a topic with no values for a dim is not filtered by that dim.
+- **Forgetting to add a new top-level page to all five nav menus.** Every page (`index.html`, `algorithms.html`, `cheatsheet.html`, `problems.html`, `resources.html`, plus all `topics/*.html`) shares the same `.nav-links` block. Adding a link in only one place makes the nav inconsistent. Use a bulk Python snippet, not 41 manual edits.
+- **Hand-editing cheatsheet HTML instead of `equation-sheet.js`.** The cheatsheet is rendered from data; one-off HTML hunks bypass the renderer and rot fast. Add formulas to the data file.
 
 ---
 
 ## Quick checklist before declaring "done"
 
 - [ ] Homepage tree renders with all topics; cards are clickable; SVG connectors with arrowheads connect groups along the spine.
+- [ ] Homepage holds **only** the Atlas / Mermaid shell + side-card + view-switch — no inline algorithm-index table.
+- [ ] `algorithms.html` exists with chip filters across paradigm / task / family; default state shows everything; per-dim and global all/none/reset buttons work; chip count `(N)` next to every label; empty-tag topics still appear regardless of chip state.
+- [ ] Top-bar nav lists all top-level pages (Roadmap / Notes / Algorithms / Equations / Resources) on every single page including all `topics/*.html`. Active page is marked `.active`.
 - [ ] Atlas + Mermaid views both render; copy-Mermaid-code button works; node clicks navigate.
 - [ ] Popup pops out from the click position, not from the edge; long content scrolls inside.
 - [ ] Three sections in popup: tutorial, code-template link (not inline), problems.
@@ -1346,7 +1478,7 @@ For Profile A sites, drop `atlas-rf.js` and the importmap/CDN imports — Profil
 - [ ] Every `expanded` topic page contains all 9 sections (Concept Understanding → Quick Checklist) in BOTH `.en-only` and `.cn-only` bodies, each section in its color-coded callout.
 - [ ] Topic pages have parallel EN / CN bodies (if bilingual); subtitle is bilingual.
 - [ ] Default language is English (or the user's chosen default); static `<html data-lang="en">` matches.
-- [ ] Slider switch shows three segments with a sliding thumb; thumb aligned with `getBoundingClientRect`.
+- [ ] Language toggle shows two segments (`EN | 中`) with a sliding thumb; thumb aligned with `getBoundingClientRect`. CN body is Chinese-dominant with English keywords inline (no whole-sentence English; no `EN+中` stacked mode).
 - [ ] EN-leak audit reports 0 across all pages.
 - [ ] Per-card progress bars fill proportionally; home ring counts 100%-done cards; all checkboxes dispatch `ml-progress-rerender`.
 - [ ] `serve.py` runs and `GET /api/progress` returns 200 with valid JSON; `POST /api/progress` writes `progress.json`.
