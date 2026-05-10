@@ -296,9 +296,153 @@ Use `mermaid@10` from jsDelivr. Initialize with `startOnLoad: false`, custom `th
 | Profile | When to use | Stack |
 | --- | --- | --- |
 | **A — Static DOM + SVG** (default) | Every course-study site. GitHub Pages. Syllabus-first projects. No build step. | Plain HTML / CSS / vanilla JS, SVG connectors, localStorage progress, optional Mermaid secondary view. |
-| **B — React Flow** (opt-in only) | The user explicitly asks for an interactive node-graph canvas with pan / zoom, side detail drawer, animated recommended-path edges. | Vite or Next.js + `@xyflow/react` + Tailwind, `roadmapNode` / `groupNode` custom node types, hidden handles on all 4 sides, `smoothstep` edges with `MarkerType.ArrowClosed`. Reuses the same `GROUPS` / `TOPICS` / `EDGES` data. |
+| **B — React Flow (no-build via importmap)** | The user explicitly asks for an interactive node-graph canvas — pan / zoom, click-anchored popover anchored to each cell, animated frontier edges. **Still no bundler / no build step.** | Plain HTML + an ES `type="module"` script (`assets/atlas-rf.js`) loading React 18 + `@xyflow/react@12` from esm.sh via an import map. Reuses the same `GROUPS` / `TOPICS` / `POPUP_DATA` / `progress-sync.js` / `popup.js` as Profile A. |
 
-Don't reach for Profile B unsolicited — it breaks the no-build-step rule and shouldn't appear unless the user asked.
+Don't reach for Profile B unsolicited unless the user asked for an interactive node graph; Profile A is friendlier for syllabus-only bootstrap and renders identically on any static host.
+
+#### Profile B — concrete contract (ML Atlas reference implementation)
+
+The reference site at `git@github.com:WYR186/ML_Atlas.git` ships this exact wiring. Copy it; don't redesign.
+
+**`<head>`** — import map + React Flow CSS + canvas-confetti CDN:
+
+```html
+<link rel="stylesheet" href="https://esm.sh/@xyflow/react@12.3.5/dist/style.css" />
+<script type="importmap">{
+  "imports": {
+    "react":         "https://esm.sh/react@18.3.1",
+    "react/":        "https://esm.sh/react@18.3.1/",
+    "react-dom":     "https://esm.sh/react-dom@18.3.1",
+    "react-dom/":    "https://esm.sh/react-dom@18.3.1/",
+    "@xyflow/react": "https://esm.sh/@xyflow/react@12.3.5?external=react,react-dom"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" defer></script>
+```
+
+The trailing-slash mappings (`react/`, `react-dom/`) are load-bearing: `@xyflow/react` internally imports `react/jsx-runtime`, and without that mapping the browser silently fails to resolve the sub-path and the canvas mounts blank.
+
+**Page shell** — `.home-shell` lives **outside `.page`** so it isn't capped by the page wrapper's `max-width`:
+
+```html
+<header class="topbar">…</header>
+
+<section class="home-shell">
+  <div class="roadmap atlas-rf" id="roadmap">
+    <div id="rfMount" class="rf-mount"></div>
+  </div>
+  <div class="mermaid-view" id="mermaidView" style="display:none;">…</div>
+  <aside class="side-card floating">…progress ring + legend + buttons…</aside>
+  <div class="view-switch floating" id="viewSwitch" role="tablist">
+    <button data-view="atlas" class="active" type="button">🌳 Atlas</button>
+    <button data-view="mermaid"               type="button">📊 Mermaid</button>
+  </div>
+</section>
+
+<div class="page">…index table…</div>
+```
+
+CSS contract (essentials):
+
+```css
+.home-shell { position: relative; width: 100%; height: calc(100vh - 65px); overflow: hidden; }
+.home-shell > .roadmap.atlas-rf,
+.home-shell > .mermaid-view { position: absolute; inset: 0; width: 100%; height: 100%; }
+.home-shell > .side-card.floating  { position: absolute; top: 24px; left: 24px;  z-index: 20; backdrop-filter: blur(14px); width: 252px; }
+.home-shell > .view-switch.floating { position: absolute; top: 24px; right: 24px; z-index: 20; backdrop-filter: blur(14px); }
+.rf-mount, .atlas-rf-canvas { width: 100%; height: 100%; }
+
+@media (max-width: 760px) {
+  .home-shell { height: calc(100vh - 56px); }
+  .home-shell > .side-card.floating  { display: none; }
+  .home-shell > .view-switch.floating { top: 12px; right: 12px; }
+}
+```
+
+**`atlas-rf.js`** — single ES module that:
+
+1. **Hand-places groups** in a `GROUP_LAYOUT` constant. Each entry is the top-left corner of a group's bounding box plus the column count. Group width / height are computed from the column count, the topic count, and the `CARD_W / CARD_H / CARD_GAP / PAD_*` constants. **Never go back to cursorY / row-by-row auto-flow** — the user has explicitly rejected long-image layouts.
+
+   ```js
+   const CARD_W = 200, CARD_H = 100, CARD_GAP = 18;
+   const PAD_X = 24, PAD_TOP = 38, PAD_BOTTOM = 26;
+   const ROOT_W = 380, ROOT_H = 100, ROOT_TOP = 24;
+   const CANVAS_W = 1900;
+
+   const GROUP_LAYOUT = {
+     foundations:    { x: 608,  y: 180,  cols: 3 },
+     supervised:     { x: 80,   y: 420,  cols: 3 },
+     unsupervised:   { x: 820,  y: 420,  cols: 2 },
+     theory:         { x: 1340, y: 420,  cols: 2 },
+     trees:          { x: 80,   y: 780,  cols: 3 },
+     neural:         { x: 820,  y: 780,  cols: 3 },
+     sequential:     { x: 80,   y: 1040, cols: 2 },
+     representation: { x: 580,  y: 1040, cols: 3 },
+     modern:         { x: 1340, y: 1040, cols: 2 },
+     generative:     { x: 770,  y: 1340, cols: 1 },
+     rl:             { x: 1340, y: 1360, cols: 2 },
+   };
+   ```
+
+2. **Topic cards are React Flow children of their group** (`parentId: "g-<gid>"` + `extent: "parent"`). Their position is relative to the parent. Parents must appear in the `nodes` array before their children.
+
+3. **Custom node types**: `topic`, `groupBox`, `root`. Each renders a small `<div>` with 8 invisible Handles (4 source: `st / sb / sl / sr`, 4 target: `tt / tb / tl / tr`) so edges can pick a specific exit / entry direction:
+
+   ```css
+   .react-flow__handle.rf-handle {
+     width: 1px; height: 1px; min-width: 0; min-height: 0;
+     background: transparent; border: 0; opacity: 0; pointer-events: none;
+   }
+   ```
+
+4. **Edges are object form** `{ from, to, sh, th, dashed? }`. Defaults: `smoothstep` + `pathOptions: { borderRadius: 24, offset: 24 }` + `MarkerType.ArrowClosed` (20×20). Stroke `#aeb4c0` / 2.6px static, `#10b981` / 3.0px when **animated** (source group fully complete + target group not). `dashed: true` adds `strokeDasharray: "7 6"` for analytical / cross-cutting links. Don't use `sb → tt` for every edge — pick directions per fork or every edge collapses onto the same vector.
+
+5. **Click is wired through React Flow's `onNodeClick`**, not a DOM handler on the inner card. Pan/drag handling on the wrapper can swallow inner clicks; `onNodeClick` is the only reliable trigger:
+
+   ```js
+   const onNodeClick = useCallback((event, node) => {
+     if (!node || node.type !== "topic") return;
+     if (event && (event.metaKey || event.ctrlKey || event.shiftKey)) {
+       window.open(`topics/${node.id}.html`, "_blank");
+       return;
+     }
+     const anchor = (event && event.currentTarget)
+       || document.querySelector(`.react-flow__node[data-id="${node.id}"]`)
+       || document.querySelector(`.rf-topic[data-slug="${node.id}"]`);
+     if (typeof window.openTopicPopup === "function" && anchor) {
+       window.openTopicPopup(node.id, anchor);
+     }
+   }, []);
+   ```
+
+   **Don't replace this with a custom right-side drawer or with direct `window.location.href` navigation.** The user wants the popover anchored to the clicked cell; popup.js already has viewport-aware flipping. The React Flow cards use class `.rf-topic` (not `.node`), so `popup.js`'s document-level `.node[data-slug]` listener does NOT auto-fire on them — that's intentional.
+
+6. **`<ReactFlow>` props** (canonical):
+
+   ```js
+   {
+     nodes, edges, nodeTypes,
+     onNodeClick,
+     nodesDraggable: false,
+     nodesConnectable: false,
+     elementsSelectable: false,
+     fitView: true,
+     fitViewOptions: { padding: 0.16, minZoom: 0.25, maxZoom: 1.15 },
+     zoomOnScroll: false, zoomOnPinch: true, zoomOnDoubleClick: false,
+     panOnScroll: false, panOnDrag: true, preventScrolling: false,
+     proOptions: { hideAttribution: true },
+     minZoom: 0.2, maxZoom: 1.6,
+     defaultEdgeOptions: { type: "smoothstep", style: { stroke: "#aeb4c0", strokeWidth: 2.6 } },
+   }
+   ```
+
+   The outer `<div>` is `width:100% / height:100%`. Never derive height from `buildLayout()` — that turns the page into a long-image scroll.
+
+7. **`ResizeObserver` on `#roadmap`** re-fits the view (padding `0.16`, duration `120`) whenever the shell resizes or the Atlas tab toggles back from `display:none`. Skip when `root.offsetParent === null` (hidden) so we don't fit a zero-sized container.
+
+8. **Confetti** fires once when all topics hit completion via `useConfettiOnComplete(progress, topics, popupData)`. Re-arms when the user uncompletes anything.
+
+9. **Search** lives in `main.js`. The handler filters both legacy `.node / .section-node` (Block detail pages) and `.rf-topic[data-slug]` cards. For React Flow cards it builds a haystack from `window.TOPICS[slug].name_en / name_cn / sub_en / sub_cn / slug` (don't rely on rendered text — i18n hides one language). Matching cards get `.search-hit` (green outline); non-matches get `.search-miss` (opacity 0.18).
 
 ---
 
@@ -473,16 +617,236 @@ When `lang === "mixed"`, applyLang(el) renders a stacked label:
 <div class="en-only">
   <section class="topic" id="probability-en">
     <h2>🎲 Probability</h2>
-    …intuition / formulas / pitfalls / exam focus / example…
+    …all 9 sections (see template below)…
   </section>
 </div>
 <div class="cn-only">
   <section class="topic" id="probability-cn">
     <h2>🎲 概率论</h2>
-    …平行的中文版本…
+    …平行的中文版本，9 个 section 完整覆盖…
   </section>
 </div>
 ```
+
+---
+
+## Topic detail page — 9-section template
+
+Every detailed topic page (the page reached by clicking a roadmap cell)
+must follow this 9-section structure. The skill goal is **make the page
+substantively more useful than the slides** — not a thin wrapper of the
+source. Sections are color-coded callouts so a student scanning the page
+can find what they need at a glance. Adapt this for **every language
+version** (parallel `.en-only` / `.cn-only` bodies).
+
+```
+# Topic Title
+
+## 1. Concept Understanding              (BLUE — formal, definitional)
+   Formal definition, problem background, what this concept solves.
+   Write in textbook-precise language. Quote a definition from the
+   source when it's load-bearing; mark it as a quote.
+
+## 2. Plain-English Explanation / 大白话理解   (ORANGE — colloquial)
+   A life-grounded analogy, an intuitive picture, written in the most
+   conversational voice you can manage. Goal: the reader understands
+   roughly what's going on without looking at any equation.
+
+## 3. Core Intuition                     (ORANGE — deeper feel)
+   Why does this method actually work? How does it relate to what came
+   before / what comes next? Surface the underlying mechanism.
+
+## 4. Key Equations                      (PURPLE — formula block)
+   Block equations (use MathJax / KaTeX), variable meanings spelled out,
+   short derivations, computation steps. Show the reader how to wield
+   the formula, not just stare at it.
+
+## 5. Worked Examples                    (GRAY — example walk-through)
+   2-3 representative example problems. Restate the problem in your own
+   words, cite where it came from (HW / midterm / textbook), then write
+   YOUR OWN solution walk-through. Don't paste solution-key text.
+
+## 6. Problem-Solving Tips               (ORANGE / YELLOW — recipe)
+   Pattern recognition: when you see X in a problem, do Y. Step-by-step
+   recipes for the common templates. "First check if the data is …,
+   then …, finally …".
+
+## 7. Common Mistakes                    (RED — warning)
+   Easy traps, off-by-one bugs, edge cases, sign errors, common
+   misreadings of definitions, gotchas the lecturer flagged.
+
+## 8. Exam Focus                         (YELLOW — must-know)
+   What MUST the student be able to derive on paper / write from
+   memory / compute by hand? Be specific: "must be able to derive
+   the gradient of the logistic loss without referring to notes".
+
+## 9. Quick Checklist                    (YELLOW — speed-rev bullets)
+   Final 5-10 bullet speed-review list. Each bullet is one sentence.
+   This is what the student re-reads the morning of the exam.
+```
+
+### Color → callout class mapping
+
+The skill's `style.css` already ships callout variants close to these
+intents. Use them so colors stay consistent across topics:
+
+| Section | Intent | Callout class | Border / accent |
+| --- | --- | --- | --- |
+| 1. Concept Understanding | Formal, blue | `callout` (default) | `#3b82f6` blue |
+| 2. Plain-English | Conversational, orange | `callout warn` (or add `callout intuition` w/ orange) | warm amber |
+| 3. Core Intuition | Deeper feel, orange | `callout intuition` | warm amber |
+| 4. Key Equations | Formula block, purple | `callout formula` | `#8b5cf6` purple |
+| 5. Worked Examples | Walk-through, gray | `callout example` | text-soft / `#f9fafb` |
+| 6. Problem-Solving Tips | Recipe, yellow-orange | `callout tip` (or `warn`) | yellow-amber |
+| 7. Common Mistakes | Warning, red | `callout danger` (add if missing) | `#ef4444` red |
+| 8. Exam Focus | Must-know, yellow | `callout exam` | `#10b981` green (highlight) or `#f59e0b` |
+| 9. Quick Checklist | Speed-rev, yellow | `callout exam` w/ checklist UL | yellow / green |
+
+If a callout variant doesn't exist yet, add it to `style.css` rather
+than inventing inline `style=` colors:
+
+```css
+.callout.intuition {
+  border-color: #f97316;        /* orange */
+  background: #fff7ed;
+}
+.callout.intuition .head { color: #c2410c; }
+
+.callout.danger {
+  border-color: #ef4444;        /* red */
+  background: #fee2e2;
+}
+.callout.danger .head { color: #991b1b; }
+```
+
+### HTML skeleton for a single language body
+
+```html
+<section class="topic" id="<slug>-en">
+  <h2>🎲 Topic Title</h2>
+
+  <!-- 1. Concept Understanding -->
+  <div class="callout">
+    <div class="head">📘 Concept Understanding</div>
+    <p>Formal definition / what problem this solves …</p>
+    <blockquote>Optional verbatim quote from source — mark as quote.</blockquote>
+  </div>
+
+  <!-- 2. Plain-English Explanation -->
+  <div class="callout intuition">
+    <div class="head">🗣️ Plain-English Explanation</div>
+    <p>A life-grounded analogy …</p>
+  </div>
+
+  <!-- 3. Core Intuition -->
+  <div class="callout intuition">
+    <div class="head">💡 Core Intuition</div>
+    <p>Why this works, mechanism, relation to neighbors …</p>
+  </div>
+
+  <!-- 4. Key Equations -->
+  <div class="callout formula">
+    <div class="head">∑ Key Equations</div>
+    <div class="eq">$$ \hat{w} = (X^\top X)^{-1} X^\top y $$</div>
+    <p><b>Variables:</b> X is …, y is …, ŵ is the OLS estimator.</p>
+    <p><b>Derivation sketch:</b> minimize ‖y − Xw‖² ⇒ set ∇ = 0 ⇒ normal equations.</p>
+  </div>
+
+  <!-- 5. Worked Examples -->
+  <div class="callout example">
+    <div class="head">📝 Worked Example — HW2 §3.1 (paraphrased)</div>
+    <p><b>Problem:</b> Fit a least-squares line to (1,1), (2,2), (3,2)…</p>
+    <p><b>Walk-through:</b> compute X<sup>⊤</sup>X = …, X<sup>⊤</sup>y = …, invert, plug in. ŵ = … Predicted at x=4 is …</p>
+  </div>
+
+  <!-- 6. Problem-Solving Tips -->
+  <div class="callout tip">
+    <div class="head">🔎 Problem-Solving Tips</div>
+    <ul>
+      <li>If the loss is L2 and the model is linear, normal equations close-form.</li>
+      <li>If X<sup>⊤</sup>X is singular, regularize (ridge) or drop colinear columns.</li>
+    </ul>
+  </div>
+
+  <!-- 7. Common Mistakes -->
+  <div class="callout danger">
+    <div class="head">⚠️ Common Mistakes</div>
+    <ul>
+      <li>Forgetting to add the bias column 1 to X.</li>
+      <li>Treating ŵ = (X<sup>⊤</sup>X)<sup>−1</sup>X<sup>⊤</sup>y as numerically stable — use QR / SVD instead.</li>
+    </ul>
+  </div>
+
+  <!-- 8. Exam Focus -->
+  <div class="callout exam">
+    <div class="head">🎯 Exam Focus</div>
+    <ul>
+      <li>Must derive normal equations from ‖y − Xw‖² without notes.</li>
+      <li>Must compute ŵ on a 3×2 example by hand.</li>
+    </ul>
+  </div>
+
+  <!-- 9. Quick Checklist -->
+  <div class="callout exam">
+    <div class="head">✅ Quick Checklist</div>
+    <ul>
+      <li>Add 1-column for bias.</li>
+      <li>X<sup>⊤</sup>X invertible? → closed-form. Else → ridge.</li>
+      <li>Loss = ½‖residual‖²; gradient = X<sup>⊤</sup>(Xw − y).</li>
+      <li>Fitted-value matrix H = X(X<sup>⊤</sup>X)<sup>−1</sup>X<sup>⊤</sup>; HX = X.</li>
+    </ul>
+  </div>
+</section>
+```
+
+Then ship a parallel `<section class="topic" id="<slug>-cn">` with the
+same 9 sections in Chinese. The CN body is a real translation /
+adaptation, not a literal word-for-word — keep the conversational voice
+in section 2 conversational in CN too. Mixed mode renders both bodies
+stacked with the existing left-border treatment from `style.css`.
+
+### Bilingual / mixed-mode rules (re-stated for the 9 sections)
+
+- Every section appears in **both** `.en-only` and `.cn-only` bodies.
+  Don't ship 9 in EN and 6 in CN.
+- Section headings are bilingual via parallel `<span class="en-only">` /
+  `<span class="cn-only">` inside `<div class="head">`, OR each `.head`
+  lives inside its own language wrapper.
+- In **mixed mode** the page shows both bodies stacked, each with its
+  thin left border (already handled by global `html[data-lang="mixed"]`
+  CSS rules). Don't try to interleave the languages section-by-section
+  — students prefer reading one full pass per language.
+- Equations stay language-neutral; explanatory prose around them is
+  duplicated.
+- Worked Examples: same problem in both languages, same numbers. Keep
+  variable names ASCII so copy-paste works in either language.
+
+### Status discipline for the 9 sections
+
+| `source_status` | How to fill the 9 sections |
+| --- | --- |
+| `planned`   | Section 1 names the topic and points at the syllabus entry. Sections 2-9 are placeholders ("to be filled in after slides arrive"). Do NOT invent equations / examples / exam predictions. |
+| `inferred`  | Like `planned`, plus a small "Likely" badge. Section 1 may sketch what this topic *probably* covers, marked as a guess. |
+| `confirmed` | Sections 1, 4, 5 must be real (sourced from slides / HW). Sections 2, 3, 6-9 may still be in progress. |
+| `expanded`  | All 9 sections written with original content, intuition, examples. |
+| `reviewed`  | `expanded` + a human passed once before exam. Add the green-check badge. |
+
+### What "more detailed" means in practice
+
+- Each callout body is at minimum 2 short paragraphs OR a 4-bullet list.
+- Section 2 (Plain-English) must include at least one analogy — a coin
+  flip, a kitchen recipe, a city map, whatever lands the intuition.
+- Section 4 (Key Equations) must spell out **every variable** and give a
+  one-line derivation sketch, not just dump the formula.
+- Section 5 (Worked Examples) must include numeric / symbolic
+  computation the student can reproduce with pen and paper.
+- Section 7 (Common Mistakes) must list at least 3 specific traps,
+  not just "be careful with signs".
+- Section 9 (Quick Checklist) must fit on one screen — that's the
+  success criterion of the entire page.
+
+A page that fails any of those bars should be rewritten before being
+flipped to `expanded`. **Don't ship shallow.**
 
 The TOC builder must be language-aware:
 
@@ -742,27 +1106,24 @@ jobs:
    - Symlink slides / HW / book from the parent; add to .gitignore alongside progress.json
 
 3. Generate topic pages from a Python script
-   - For each topic, write a single HTML page using the topic template.
+   - For each topic, write a single HTML page using the [9-section
+     topic detail page template](#topic-detail-page--9-section-template)
+     below. Each section is a callout-styled `<div class="callout …">`
+     with a colored left border that signals its purpose at a glance.
    - Branch on source_status:
      • planned/inferred → SKELETON page (status block, expected_subtopics
        list, "to be expanded after slides arrive" placeholder, source_basis
-       references). No fake formulas / examples / exam claims.
-     • confirmed/expanded → FULL page with these sections in order:
-         1. Status & sources (badge + source_basis chips)
-         2. Big Picture — what it is + why it matters
-         3. Core Idea — main concept in your own words
-         4. Key Formulas / Definitions — quote when load-bearing, mark as
-            quotes; otherwise paraphrase clearly (see hard rule #1)
-         5. How to Recognize It — when this gets tested / used
-         6. Common Traps — student mistakes
-         7. Minimal Example — small ORIGINAL example, not from HW
-         8. Exam Checklist — actionable bullets
-         9. Related Topics — prerequisites + follow-ups (links)
-        10. Sources Used — local file references, not copied text
+       references). No fake formulas / examples / exam claims; the 9
+       sections may still appear but most are placeholders pointing at
+       the missing materials.
+     • confirmed/expanded → FULL 9-section page with real, detailed
+       content in every section.
    - Detail pages must be MORE detailed and EASIER to understand than the
      source — clearer wording, expanded steps, intuition, "why does this
      work" notes. A page that mirrors the slide deck has failed.
-   - For bilingual sites, ship parallel .en-only / .cn-only sections per page
+   - For bilingual sites, ship parallel .en-only / .cn-only sections per
+     page; **all 9 sections appear in BOTH bodies** so a CN reader gets
+     the same teaching depth as an EN reader.
    - Subtitle is bilingual <span class="en-only"> / <span class="cn-only">
 
 4. Wire the homepage tree
@@ -934,13 +1295,17 @@ Reference implementations live next to this SKILL.md in `assets/`:
 
 ```
 ~/.claude/skills/class-material-to-website/assets/
-├── style.css       polished bilingual CSS + popup + slider thumb + airy roadmap
-├── i18n.js         EN / EN+中 / 中 + slider thumb alignment
-├── popup.js        click-anchored popup with viewport-aware positioning
-└── main.js         progress + search + connector + topic-code injector
+├── style.css         polished bilingual CSS + popup + slider thumb + .home-shell + .rf-* nodes
+├── progress-sync.js  ⚠ MUST load first; patches localStorage to /api/progress
+├── i18n.js           EN / EN+中 / 中 + slider thumb alignment
+├── popup.js          click-anchored popup with viewport-aware positioning + window.openTopicPopup
+├── main.js           progress + search (also targets .rf-topic) + topic-code injector
+└── atlas-rf.js       Profile B — React Flow Atlas ES module (mounts in #rfMount; uses GROUP_LAYOUT + onNodeClick)
 ```
 
-Copy verbatim into the new site, then customize colors / dictionary entries / connector edges. Don't rewrite from scratch.
+Copy verbatim into the new site, then customize colors / dictionary entries / connector edges / `GROUP_LAYOUT` coordinates. Don't rewrite from scratch.
+
+For Profile A sites, drop `atlas-rf.js` and the importmap/CDN imports — Profile A renders the roadmap with vanilla DOM + SVG connectors built into `main.js`. For Profile B sites, drop both `atlas-rf.js` AND keep the existing `popup.js` (the popover pops out from the cell — Profile B does NOT replace it with a custom drawer).
 
 ---
 
@@ -959,7 +1324,8 @@ Copy verbatim into the new site, then customize colors / dictionary entries / co
 - **Reading TOC from `h2.textContent` without filtering** — picks up both EN and CN headings. Filter by `closest('.en-only' / '.cn-only')` ancestor.
 - **Slider thumb misaligned** — CSS percentage transforms drift. Use `getBoundingClientRect()` of the active button.
 - **Pasting a whole HW problem or solution wall-of-text.** Stop. The default is paraphrase + a clearer explanation; reserve quotes for specific load-bearing phrasing (precise definitions, exact prompts, key formulas) and mark them as quotes. Always link to the source PDF for the full text.
-- **Detail page that just mirrors the slide deck or textbook section.** Not enough. The value of a detail page is making the source easier to understand — expand terse steps, add intuition, walked-through examples, and "why does this work" notes. If your page reads identical to the slide, rewrite it.
+- **Detail page that just mirrors the slide deck or textbook section.** Not enough. The value of a detail page is making the source easier to understand — expand terse steps, add intuition, walked-through examples, and "why does this work" notes. If your page reads identical to the slide, rewrite it. Use the [9-section template](#topic-detail-page--9-section-template) — every section is a colored callout, and a topic page that doesn't have all 9 sections in BOTH language bodies is not yet `expanded`.
+- **Shipping fewer sections in CN than in EN.** The CN reader gets the same teaching depth. If you write Plain-English / Worked Examples / Quick Checklist in EN, write them in CN too. Mixed mode shows both bodies stacked.
 - **Marking a topic `confirmed` without evidence.** If the slides / HW / notes haven't actually mentioned it, it must stay `planned` or `inferred`. Faking confirmation poisons the source-status UI.
 - **Inventing course-specific formulas / examples / exam-focus on a `planned` page.** Skeleton pages must read as skeletons; the user can tell when you've made up specifics that aren't in any source they have.
 - **Overwriting a human-edited topic page on a weekly update.** Check mtime vs. topics-data.js (or the `<!-- human-edited -->` marker). When in doubt, write `<slug>.html.new` and surface the diff instead of clobbering.
@@ -977,6 +1343,7 @@ Copy verbatim into the new site, then customize colors / dictionary entries / co
 - [ ] Topic page has a `<section id="code">` injected from popup-data.js code field.
 - [ ] HW problem titles are paraphrased (literal quotes only when load-bearing, marked as quotes); answers are mostly your own clearer explanation, with quotes reserved for essential definitions/formulas.
 - [ ] Detail topic pages go beyond the source — clearer wording, expanded steps, intuition, worked micro-examples — not a verbatim mirror of the slides/textbook.
+- [ ] Every `expanded` topic page contains all 9 sections (Concept Understanding → Quick Checklist) in BOTH `.en-only` and `.cn-only` bodies, each section in its color-coded callout.
 - [ ] Topic pages have parallel EN / CN bodies (if bilingual); subtitle is bilingual.
 - [ ] Default language is English (or the user's chosen default); static `<html data-lang="en">` matches.
 - [ ] Slider switch shows three segments with a sliding thumb; thumb aligned with `getBoundingClientRect`.
