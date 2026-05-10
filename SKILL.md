@@ -751,6 +751,37 @@ Treat the cheatsheet as **rendered from data**, not hand-edited HTML. `equation-
 
 `cheatsheet.html` is a thin shell that calls the renderer. To add a formula, edit the data file. Don't sprinkle one-off `<div class="callout">…</div>` blocks into the HTML — that defeats the rendered-from-data invariant and the page becomes unmaintainable.
 
+### Long-equation handling
+
+Some course formulas are physically wider than a card column (e.g. multi-line backprop derivations, ELBO with three terms expanded). Two patterns to combine so the cheatsheet never needs horizontal scrolling:
+
+1. **Tell MathJax to line-break display equations.** In the `<head>` of `cheatsheet.html`:
+
+   ```html
+   <script>window.MathJax={
+     tex:{inlineMath:[['$','$'],['\\(','\\)']]},
+     svg:{fontCache:'global'},
+     chtml:{displayOverflow:'linebreak',linebreaks:{inline:true}},
+     output:{displayOverflow:'linebreak'}
+   };</script>
+   ```
+
+2. **Give the formula container vertical breathing room instead of horizontal scroll.** Replace `overflow-x: auto` with `overflow-x: clip; overflow-wrap: anywhere; min-width: 0;` on `.equation-math`, and force MathJax containers to wrap as blocks:
+
+   ```css
+   .equation-math {
+     overflow-x: clip;
+     overflow-wrap: anywhere;
+     min-width: 0;
+   }
+   .equation-math mjx-container { max-width: 100%; display: block; white-space: normal; }
+   .equation-math mjx-container[display="true"] { margin: 0; overflow: visible; }
+   ```
+
+   Pair with a wider grid track — `repeat(auto-fill, minmax(min(440px, 100%), 1fr))` — so the cards have room to begin with, and tighten padding + font-size at the `760px` mobile breakpoint.
+
+Without these, the longest equations on each topic spill past the right edge of the card and the only fix the user has is a horizontal scrollbar on every card.
+
 ---
 
 ## Topic detail page — 9-section template
