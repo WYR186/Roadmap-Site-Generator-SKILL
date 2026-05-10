@@ -164,7 +164,6 @@ function MixedLabel({ en, cn }) {
   );
 }
 function pickLabel(en, cn, lang) {
-  if (lang === "mixed") return h(MixedLabel, { en, cn });
   if (lang === "cn") return cn || en;
   return en || cn;
 }
@@ -361,15 +360,21 @@ function useConfettiOnComplete(progress, topics, popupData) {
 
 // ─────────────────── Hooks ───────────────────
 function useLang() {
+  const readLang = () => {
+    const v = localStorage.getItem("ml_review_lang_v1");
+    if (v === "cn" || v === "en") return v;
+    if (v === "mixed") localStorage.setItem("ml_review_lang_v1", "en");
+    return "en";
+  };
   const [lang, setLang] = useState(
-    () => localStorage.getItem("ml_review_lang_v1") || "en"
+    readLang
   );
   useEffect(() => {
     const handler = (e) => {
       if (e.target.closest && e.target.closest(".lang-switch button")) {
         // i18n.js writes the new value first, then we re-read on next tick.
         setTimeout(() => {
-          setLang(localStorage.getItem("ml_review_lang_v1") || "en");
+          setLang(readLang());
         }, 0);
       }
     };
