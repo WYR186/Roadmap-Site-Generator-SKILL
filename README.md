@@ -26,7 +26,7 @@ Built for real semesters: starts from a syllabus alone, grows as new slides arri
 | Homepage         | Root node + conceptual group boxes in two columns, one card per topic, SVG bezier connectors        |
 | Card popup       | Anchored at click position; tutorial summary, code-template link, paraphrased homework list         |
 | Topic page       | Big Picture · Core Idea · Key Formulas · How to Recognize It · Common Traps · Example · Checklist   |
-| Bilingual mode   | `EN  ·  EN+中  ·  中` slider with a strict zero-Chinese-leak audit in EN mode                        |
+| Bilingual mode   | `EN · 中` two-segment toggle (中 keeps technical English keywords inline); strict zero-Chinese-leak audit in EN mode |
 | Progress         | Per-checkbox state, per-card progress bars, home progress ring, export / import JSON                |
 | Persistence      | `serve.py` writes `progress.json`; survives browser clears, port changes, machine moves             |
 | Deploy           | One push to `main` → GitHub Pages via Actions workflow                                              |
@@ -116,7 +116,7 @@ README.md                           ← this file (the GitHub front page)
 serve.py                            ← local dev server template (HTTP + /api/progress)
 assets/
   ├── style.css                     ← bilingual CSS, popup, slider thumb, airy roadmap
-  ├── i18n.js                       ← EN / EN+中 / 中 with slider thumb alignment
+  ├── i18n.js                       ← EN / 中 two-mode toggle with slider thumb alignment
   ├── popup.js                      ← click-anchored popup with viewport-aware positioning
   ├── main.js                       ← progress + search + connector + topic-code injector
   └── progress-sync.js              ← localStorage ⇄ /api/progress, MUST load first

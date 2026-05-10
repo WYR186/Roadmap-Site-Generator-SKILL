@@ -1,11 +1,19 @@
-// === i18n: EN / Mixed / CN switch ===
-// Three language modes:
-//   "en"     — English only (default for first-time visitors)
-//   "mixed"  — both languages stacked (great for studying)
-//   "cn"     — Chinese only
+// === i18n: EN / 中 switch ===
+// Two language modes:
+//   "en"  — English only (default for first-time visitors)
+//   "cn"  — Chinese-dominant; technical English keywords (Hessian, PSD,
+//           softmax, Transformer, prior/posterior, …) stay inline in the
+//           authored content. No stacked-bilingual "mixed" mode.
 // HTML elements use data-i18n="key" (textContent) or
 // data-i18n-attr="placeholder" data-i18n="key" (attribute).
-// Block content uses .cn-only / .en-only wrappers; mixed mode shows both.
+// Block content uses .cn-only / .en-only wrappers; one side is hidden
+// purely via CSS based on html[data-lang].
+//
+// Legacy: an earlier version of the skill had a third "mixed" mode that
+// stacked .lbl-en + .lbl-cn spans. It was removed because the duplicated
+// walls of text just cluttered the page. getLang() normalizes any
+// "mixed" value still sitting in localStorage to "en". Do NOT reintroduce
+// the mixed branch or .lbl-en / .lbl-cn stacking.
 
 const I18N_KEY = "ml_review_lang_v1";
 
@@ -84,26 +92,18 @@ const I18N = {
 
 function getLang() {
   const v = localStorage.getItem(I18N_KEY);
-  if (v === "en" || v === "cn" || v === "mixed") return v;
+  if (v === "en" || v === "cn") return v;
+  // Legacy "mixed" value migrates to "en" — rewrite once so subsequent
+  // reads are clean and the lang switch doesn't drift on the next paint.
+  if (v === "mixed") {
+    try { localStorage.setItem(I18N_KEY, "en"); } catch {}
+  }
   return "en";  // default for first-time visitors
 }
 function setLang(lang) {
   localStorage.setItem(I18N_KEY, lang);
   applyLang(lang);
 }
-// Strip a leading emoji + spaces from a string. Returns { emoji, rest }.
-function stripLeadEmoji(s) {
-  s = String(s || "");
-  const m = s.match(/^(\p{Extended_Pictographic}+)\s*/u);
-  return m ? { emoji: m[1], rest: s.slice(m[0].length) } : { emoji: "", rest: s };
-}
-
-function escHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[c]));
-}
-
 function alignSliderThumb(sw) {
   // Position the thumb pixel-precisely to the active button — independent
   // of paddings, borders and per-button content widths.
@@ -132,36 +132,9 @@ function applyLang(lang) {
     const dict = I18N[key];
     if (!dict) return;
     const attr = el.getAttribute("data-i18n-attr");
-
-    // Single-language modes: just write text content (or attribute).
-    if (lang === "cn" || lang === "en") {
-      const value = lang === "cn" ? (dict.cn || dict.en) : (dict.en || dict.cn);
-      if (attr) el.setAttribute(attr, value);
-      else el.textContent = value;
-      return;
-    }
-
-    // Mixed mode. For attributes (placeholder, title, etc.) keep an inline
-    // string. For text content, stack EN above CN and deduplicate any
-    // shared leading emoji.
-    if (attr) {
-      const fallback = (dict.en && dict.cn && dict.en !== dict.cn)
-        ? `${dict.en} · ${dict.cn}` : (dict.en || dict.cn);
-      el.setAttribute(attr, fallback);
-      return;
-    }
-
-    if (!dict.en || !dict.cn || dict.en === dict.cn) {
-      el.textContent = dict.en || dict.cn;
-      return;
-    }
-
-    const en = stripLeadEmoji(dict.en);
-    const cn = stripLeadEmoji(dict.cn);
-    const sharedEmoji = en.emoji && en.emoji === cn.emoji;
-    const enLine = sharedEmoji ? `${en.emoji} ${en.rest}` : dict.en;
-    const cnLine = sharedEmoji ? cn.rest : dict.cn;
-    el.innerHTML = `<span class="lbl-en">${escHtml(enLine)}</span><span class="lbl-cn">${escHtml(cnLine)}</span>`;
+    const value = lang === "cn" ? (dict.cn || dict.en) : (dict.en || dict.cn);
+    if (attr) el.setAttribute(attr, value);
+    else el.textContent = value;
   });
 
   // Toggle button "active" state for accessibility / focus styling.
@@ -171,9 +144,9 @@ function applyLang(lang) {
 }
 
 function injectLangSwitch() {
-  // Adds a segmented EN / EN+中 / 中 slider next to the search box.
-  // The order is fixed: EN (left), EN+中 (middle), 中 (right) — the
-  // CSS thumb position is keyed off [data-active] so it must match.
+  // Adds a two-segment EN / 中 slider next to the search box. Order is
+  // fixed: EN (left), 中 (right). The CSS thumb position is keyed off
+  // [data-active] so the button order must match.
   const topbarInner = document.querySelector(".topbar-inner");
   if (!topbarInner || document.querySelector(".lang-switch")) return;
   const wrap = document.createElement("div");
@@ -182,9 +155,8 @@ function injectLangSwitch() {
   wrap.setAttribute("data-active", getLang());
   wrap.innerHTML = `
     <span class="lang-thumb" aria-hidden="true"></span>
-    <button data-lang="en"    type="button" role="tab" title="English only">EN</button>
-    <button data-lang="mixed" type="button" role="tab" title="Both languages">EN+中</button>
-    <button data-lang="cn"    type="button" role="tab" title="Chinese only">中</button>
+    <button data-lang="en" type="button" role="tab" title="English only">EN</button>
+    <button data-lang="cn" type="button" role="tab" title="Chinese only">中</button>
   `;
   const search = topbarInner.querySelector(".search-box");
   if (search) topbarInner.insertBefore(wrap, search);

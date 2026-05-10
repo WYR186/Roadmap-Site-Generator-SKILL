@@ -1,11 +1,10 @@
 /* ===== i18n visibility (2 modes: en / cn) =====
-   - en      → hide .cn-only, .mixed-only and .bi-text .cn
-   - cn      → hide .en-only, .mixed-only and .bi-text .en
-   - mixed   → legacy value normalized to en by assets/i18n.js                */
+   - en   → hide .cn-only and .bi-text .cn
+   - cn   → hide .en-only and .bi-text .en
+   Legacy "mixed" value in localStorage is migrated to "en" by i18n.js;
+   .mixed-only and .lbl-en / .lbl-cn stacking are obsolete (do not reintroduce). */
 html[data-lang="cn"] .en-only       { display: none !important; }
 html[data-lang="en"] .cn-only       { display: none !important; }
-html[data-lang="en"] .mixed-only,
-html[data-lang="cn"] .mixed-only    { display: none !important; }
 html[data-lang="cn"] .bi-text .en   { display: none; }
 html[data-lang="en"] .bi-text .cn   { display: none; }
 html[data-lang="en"] .bi-text       { gap: 0; }

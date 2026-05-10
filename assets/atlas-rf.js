@@ -146,23 +146,6 @@ function groupComplete(gid, topics, p, popupData) {
 }
 
 // ─────────────────── Bilingual label ───────────────────
-const EMOJI_RE = /^(\p{Extended_Pictographic}+)\s*/u;
-function stripEmoji(s) {
-  const str = String(s || "");
-  const m = str.match(EMOJI_RE);
-  return m ? { emoji: m[1], rest: str.slice(m[0].length) } : { emoji: "", rest: str };
-}
-function MixedLabel({ en, cn }) {
-  if (!en || !cn || en === cn) return en || cn;
-  const e = stripEmoji(en), c = stripEmoji(cn);
-  const shared = e.emoji && e.emoji === c.emoji;
-  const enLine = shared ? `${e.emoji} ${e.rest}` : en;
-  const cnLine = shared ? c.rest : cn;
-  return h(React.Fragment, null,
-    h("span", { className: "lbl-en" }, enLine),
-    h("span", { className: "lbl-cn" }, cnLine),
-  );
-}
 function pickLabel(en, cn, lang) {
   if (lang === "cn") return cn || en;
   return en || cn;
