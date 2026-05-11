@@ -1049,7 +1049,7 @@ html[data-theme="dark"] .toc-problem-link:hover {
 .py-number { color: #fca5a5; }
 .py-comment { color: #86efac; font-style: italic; }
 
-/* Callouts — labuladong-flavored: subtle left border, colored title, no heavy bg */
+/* Callouts — subtle colored left border, colored title, no heavy fill */
 .callout {
   border-left: 3px solid var(--info);
   background: transparent;
@@ -1750,7 +1750,7 @@ mark { background: #fef3c7; padding: 1px 3px; border-radius: 3px; }
 }
 .react-flow__edge-path { stroke-linecap: round; }
 
-/* Topic card — labuladong-like uniform card. */
+/* Topic card — uniform white card, rounded, soft shadow. */
 .rf-topic {
   position: relative;
   display: flex;
@@ -1910,7 +1910,7 @@ mark { background: #fef3c7; padding: 1px 3px; border-radius: 3px; }
   overflow: hidden;
 }
 .rf-root::after {
-  /* labuladong-style accent strip across the bottom edge. */
+  /* Accent strip across the bottom edge keys off the topic's group color. */
   content: "";
   position: absolute;
   left: 14px;

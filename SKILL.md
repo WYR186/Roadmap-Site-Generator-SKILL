@@ -55,6 +55,58 @@ If the user only wants a single static page (no tree, no per-topic pages), this 
 
 ---
 
+## Reproduction blueprint (what to deliver for a new course)
+
+This is the **target shape**. The reference implementation at `WYR186/ML_Atlas` ships all of these; a new course site is not "done" until it matches this list. Use it as both a setup checklist and the contract for declaring a build complete. Each row points at the detailed section that explains how.
+
+### Pages
+
+| Page                      | Purpose                                                                                     | Built from                                            | Detailed in              |
+| ------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------ |
+| `index.html`              | **Homepage only.** Atlas (React Flow Profile B *or* DOM+SVG Profile A) + Mermaid switch + progress side-card. Nothing else lives here. | `topics-data.js`, `atlas-rf.js` *(Profile B)*         | [Tree roadmap](#the-tree-roadmap-core-deliverable), [Renderer profile](#renderer-profile-default-vs-opt-in) |
+| `algorithms.html`         | Standalone topic / algorithm index with multi-axis chip filters (paradigm / task / family). | `algorithm-tags.js`, `algorithm-index.js`             | [Standalone algorithm index](#standalone-algorithm-index--algorithmshtml) |
+| `cheatsheet.html`         | Bilingual equation / formula sheet — data-driven blocks, not hand-edited HTML.              | `equation-sheet.js`                                   | [Cheatsheet](#cheatsheet--cheatsheethtml--assetsequation-sheetjs) |
+| `problems.html` *(opt.)*  | Flat HW-problem aggregator (all problems across all topics, single-page checklist).         | `popup-data.js`, `problems-page.js`                   | [HW-problem aggregator](#standalone-hw-problem-aggregator--problemshtml-optional) |
+| `resources.html`          | Lecture / HW / textbook / syllabus → topic mapping. Local-path links only (PDFs not committed). | `lectures` data + per-topic `source_basis`           | (per-course content)     |
+| `topics/<slug>.html` ×N   | **One per topic.** 9-section detail page with color-coded callouts. EN and CN bodies side by side. | 9-section template                                    | [9-section template](#topic-detail-page--9-section-template) |
+
+Every page must include the same top-bar `.nav-links` block linking to all of the above (Roadmap / Notes / Algorithms / Equations / Resources, plus Problems if you ship it).
+
+### Asset files (all live under `assets/`)
+
+| File                  | Required?                              | What it does                                                                                  |
+| --------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `style.css`           | always                                 | Visuals, i18n visibility, popup, slider thumb, `.rf-*` (React Flow), `.algo-*` (chip filters), `.callout` palette. |
+| `progress-sync.js`    | always — **must load first**           | Patches `localStorage` ↔ `/api/progress` so progress survives port / browser / machine moves. |
+| `main.js`             | always                                 | Progress aggregation, search box, topic-page code injector, `ml-progress-rerender` event bus. |
+| `popup.js`            | always                                 | Click-anchored popup component (viewport-aware positioning). Exposes `window.openTopicPopup(slug, anchor)`. |
+| `popup-data.js`       | always                                 | Per-topic tutorial blurb + code snippets + HW problem list (paraphrased).                     |
+| `topics-data.js`      | always                                 | `GROUPS` + `TOPICS` (+ `LECTURES` + `EDGES` + `SOURCE_MANIFEST`) — the source-of-truth data.  |
+| `i18n.js`             | bilingual only                         | `EN` / `中` two-mode toggle + i18n dictionary. Legacy `mixed` value normalizes to `en`.       |
+| `atlas-rf.js`         | Profile B (React Flow) only            | ES-module React Flow Atlas. Mounts in `#rfMount` on `index.html`. Uses `GROUP_LAYOUT` coords. |
+| `algorithm-tags.js`   | for `algorithms.html`                  | `TOPIC_TAGS` (slug → 3-axis tag arrays) + `TAG_DIMENSIONS` (chip definitions in render order).|
+| `algorithm-index.js`  | for `algorithms.html`                  | Renderer + chip filter logic. Honors the empty-tag carve-out (foundation topics stay visible).|
+| `equation-sheet.js`   | for `cheatsheet.html`                  | Formula data blocks (per-topic), rendered into `cheatsheet.html` by a small renderer in main. |
+| `problems-page.js`    | for `problems.html` (optional)         | Flat HW-aggregator renderer.                                                                  |
+
+Plus at the root: `serve.py` (dev server with `/api/progress`), `.github/workflows/deploy.yml` (Pages auto-deploy), `.gitignore`, `README.md` (user-facing), `AGENT.md` (project notes).
+
+### Features the site must have
+
+- **Source-status model** rendered on every card: dashed border for `planned`, gray tint + "Likely" badge for `inferred`, green check badge for `reviewed`. Typed edges with dotted style for `inferred` and `weak-link`.
+- **Two-mode bilingual** (`EN` / `中`) on every page, with the EN-leak audit reporting 0 leaks. CN body is Chinese-dominant with English keywords inline (no parallel English sentences, no stacked-bilingual third mode).
+- **9-section topic pages** (Concept Understanding → Plain-English → Core Intuition → Key Equations → Worked Examples → Problem-Solving Tips → Common Mistakes → Exam Focus → Quick Checklist) for every `expanded` topic, in BOTH language bodies, each in its color-coded callout.
+- **Click-anchored popup** from each Atlas card (tutorial summary + code-template link + paraphrased problems). Popup pops out at the click position with viewport-aware up/down placement.
+- **Progress persistence** via `serve.py` + `progress-sync.js`, plus Export / Import JSON buttons with tooltips.
+- **GitHub Pages deploy** via the workflow; first push triggers the one-time Settings → Pages → Source: GitHub Actions toggle.
+- **No build step.** Plain HTML / CSS / vanilla JS, optional Mermaid + MathJax via CDN. Profile B uses an importmap to load React Flow from a CDN — still no bundler.
+
+### Done = every box on the [final checklist](#quick-checklist-before-declaring-done) ticked
+
+If a future invocation of this skill on a new course skips any of the rows above, it has *not* reproduced the reference caliber. Re-trigger or fix forward before declaring the site complete.
+
+---
+
 ## Source-status model (evidence-aware roadmap)
 
 Every topic carries a status that says how grounded that claim is in the materials. The site UI surfaces this so the student knows what's real vs. predicted.
@@ -1252,11 +1304,23 @@ jobs:
    - Print proposed topic list + groups + each topic's planned source_status,
      ASK USER TO CONFIRM before generating pages
 
-2. Scaffold the site folder
+2. Scaffold the site folder (full asset roster, not just the runtime essentials)
    - Create output dir + assets/ + topics/ + .github/workflows/
-   - Write style.css, progress-sync.js, main.js (and i18n.js if bilingual)
-   - Write serve.py and deploy.yml
-   - Symlink slides / HW / book from the parent; add to .gitignore alongside progress.json
+   - Copy these asset TEMPLATES from this skill's assets/ verbatim, then
+     customize only the data files for the course:
+       always:        style.css, progress-sync.js, main.js, popup.js
+       bilingual:     i18n.js
+       Profile B:     atlas-rf.js                   (React Flow Atlas)
+       always (data): topics-data.js, popup-data.js (course content lives here)
+       index page:    algorithm-tags.js, algorithm-index.js
+       cheatsheet:    equation-sheet.js
+       problems pg:   problems-page.js              (optional)
+   - Write serve.py and .github/workflows/deploy.yml
+   - Write .gitignore (HW/, slides/, book/, progress.json, .DS_Store, *.new)
+   - Symlink slides / HW / book from the parent
+   - Verify the [Reproduction blueprint](#reproduction-blueprint-what-to-deliver-for-a-new-course)
+     asset table — every file in the "always" / "for this profile" / "for
+     this page" rows should exist after this step.
 
 3. Generate topic pages from a Python script
    - For each topic, write a single HTML page using the [9-section
@@ -1290,6 +1354,42 @@ jobs:
    - Auto-generate flowchart TD from GROUPS + TOPICS with stadium nodes,
      per-subgraph color tints, click handlers, classDef difficulty palette
    - Copy-Mermaid-source button + collapsible <details> textarea
+
+5a. Generate algorithms.html (standalone topic index)
+   - Author TOPIC_TAGS in assets/algorithm-tags.js — every topic gets
+     0..N values per dimension (paradigm / task / family). Topics with no
+     tags in a dimension are NOT filtered by that dimension (carve-out
+     for foundations / theory pages).
+   - Author TAG_DIMENSIONS in render order — one entry per chip group,
+     with id / label_en / label_cn / values[].
+   - Wire assets/algorithm-index.js to render the table, per-dimension
+     all/none/reset buttons, global reset, and chip counts.
+   - Top-bar nav must include the "Algorithms" link on every page.
+   - Trim chip axes to ML / course-knowledge only — do NOT add block /
+     week / difficulty / lecture # chips (course-org metadata clutters
+     the panel and doesn't help students slice the curriculum).
+
+5b. Generate cheatsheet.html (equation sheet)
+   - Author assets/equation-sheet.js — per-topic formula blocks with
+     LaTeX (rendered by MathJax CDN).
+   - The page renderer reads the data file; do NOT hand-edit inline HTML
+     for individual formulas — that path rots.
+   - Long equations wrap or scroll horizontally inside their block; the
+     section header keeps the topic name + a back-link to topics/<slug>.html.
+
+5c. (Optional) Generate problems.html (HW-problem aggregator)
+   - Flatten popup-data.js problems[] across all topics into a single
+     checklist. Each row: completion checkbox (sync'd with the popup
+     state), paraphrased title, source-PDF + solution-PDF links, the
+     topic it belongs to.
+   - Only build this if the user wants a single "do all HW" page; it's
+     duplicative of the popup-level checklists otherwise.
+
+5d. Generate resources.html (lecture / HW / textbook map)
+   - List each lecture (number, title, source_status badge) with links
+     to its slides / HW / sol PDF via the gitignored symlinks.
+   - List each textbook / reference doc with its local path.
+   - This page makes the source_basis chips on topic pages navigable.
 
 6. Harvest homework problems (paraphrase first, quote when needed)
    - Read each HW PDF; for every problem, write a one-line title in your
@@ -1326,8 +1426,13 @@ jobs:
 
 11. Local smoke test
     - python3 serve.py 8821 from inside the site folder
-    - curl index.html, a topic page, /api/progress (200), an HW pdf via symlink (200)
-    - Run the EN-leak audit (see below) — target zero leaks
+    - curl every top-level page returns 200: index.html, algorithms.html,
+      cheatsheet.html, resources.html, (problems.html), a topic page
+    - curl /api/progress returns 200 with valid JSON; POST a no-op payload
+      returns 204 and writes progress.json
+    - curl an HW pdf via the symlink returns 200 (proves symlink + serve.py)
+    - Run the EN-leak audit (see below) — target zero leaks on every HTML
+      page including the new standalone ones
 
 12. Git
     - Inside the site folder: git init -b main, .gitignore in place
